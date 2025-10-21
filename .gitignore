@@ -1,0 +1,15 @@
+# Ignorar CSV grandes
+*.csv
+
+# Archivos R temporales
+.Rhistory
+.RData
+.Rproj.user
+
+# Archivos de salida de R
+*.rds
+*.RData
+
+# Ignorar archivos de logs y caché
+*.log
+*.tmp
