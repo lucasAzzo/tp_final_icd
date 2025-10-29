@@ -15,35 +15,14 @@ appearances <- read_csv("appearances.csv")
 
 # ---- End Carga de los datasets ----
 
-# ---- Seleccion de tablas y variables ----
+delanteros <- players |>
+  filter(position == "Attack" & last_season == 2024) |>
+  mutate(age = floor(interval(date_of_birth, today()) / years(1))) |>
+  filter(!is.na(market_value_in_eur) & !is.na(height_in_cm))
 
-players <- players %>%
-  select(
-    player_id, 
-    name, 
-    last_season, 
-    date_of_birth,
-    position, 
-    sub_position,
-    height_in_cm, 
-    market_value_in_eur
-  )
-
-competitions <- competitions %>%
-  select(competition_id, type, sub_type, name)
-
-appearances <- appearances %>%
-  select(-player_club_id, -player_current_club_id)
-
-# ---- End Seleccion de tablas y variables ----
-
-delanteros <- players %>%
-  filter(position == 'Attack' & last_season == '2024')
-
-delanteros <- delanteros %>%
-  mutate(age = floor(interval(date_of_birth, today()) / years(1)))
-
-appearances <- appearances %>% semi_join(delanteros, join_by(player_id))
+appearances <- appearances |>
+  semi_join(delanteros, join_by(player_id)) |>
+  filter(date >= "2023-08-01")
 
 glimpse(delanteros)
 
@@ -291,29 +270,96 @@ delanteros_height_position_avg %>%
 
 # ---- Comienzo del modelado ----
 
-app <- appearances %>%
-  group_by(player_id) %>%
-  summarise(minutos_jugados=sum(minutes_played), asistencias_totales=sum(assists), asistencia_por_min=asistencias_totales/minutos_jugados, goles_por_min=goals/minutos_jugados) 
+stats_delanteros <- appearances |>
+  group_by(player_id) |>
+  summarise(
+    n = n(),
+    goals = sum(goals),
+    assists = sum(assists),
+    goals_90 = sum(goals)/n(),
+    assists_90 = sum(assists)/n(),
+    red_cards = sum(red_cards),
+    yellow_cards = sum(yellow_cards),
+  ) |> 
+  inner_join(delanteros, join_by(player_id))
 
-delanteros_con_goles <- delanteros_con_goles %>%
-  left_join(app, by="player_id")
+glimpse(stats_delanteros)
 
-# ---- Modelo 1 ----
-mod1 <- lm(market_value_in_eur ~ goals + age + asistencias_totales + height_in_cm, data = delanteros_con_goles)
+# modelo 1
+mod1 <- lm(market_value_in_eur ~ poly(goals, 3), data =stats_delanteros)
 summary(mod1)
-# ---- End Modelo 1 ----
 
-# ---- Modelo 2 ----
-mod2 <- lm(market_value_in_eur ~ goals + age + asistencias_totales + height_in_cm + sub_position, data = delanteros_con_goles)
+# modelo 2
+mod2 <- lm(market_value_in_eur ~ goals * goals_90, data =stats_delanteros)
 summary(mod2)
-# ---- End Modelo 2 ----
 
-# ---- Modelo 3 ----
-mod3 <- lm(market_value_in_eur ~ goals + factor(age) + asistencias_totales + height_in_cm + sub_position, data = delanteros_con_goles)
+# modelo 3
+mod3 <- lm(market_value_in_eur ~ goals * goals_90 + assists, data =stats_delanteros)
 summary(mod3)
-# ---- End Modelo 3 ----
 
-anova(mod1, mod2, mod3)
+# modelo 4
+mod4 <- lm(market_value_in_eur ~ goals * goals_90 + assists * assists_90, data =stats_delanteros)
+summary(mod4)
+
+# modelo 5
+mod5 <- lm(market_value_in_eur ~ goals * goals_90 * assists * assists_90, data =stats_delanteros)
+summary(mod5)
+
+# modelo 6
+mod6 <- lm(market_value_in_eur ~ goals * goals_90 * assists * assists_90 * age, data =stats_delanteros)
+summary(mod6)
+
+# modelo 7
+mod7 <- lm(market_value_in_eur ~ goals * goals_90 * assists * assists_90 * age * sub_position, data =stats_delanteros)
+summary(mod7)
+
+# modelo 8
+mod8 <- lm(market_value_in_eur ~ goals * goals_90 * assists * assists_90 * age * sub_position * red_cards * yellow_cards, data =stats_delanteros)
+summary(mod8)
+
+# modelo 9
+mod9 <- lm(market_value_in_eur ~ goals * current_club_domestic_competition_id - 1, data =stats_delanteros)
+summary(mod9)
+
+# modelo 10
+mod10 <- lm(market_value_in_eur ~ goals * age * current_club_domestic_competition_id - 1, data =stats_delanteros)
+summary(mod10)
+
+# modelo 11
+mod11 <- lm(market_value_in_eur ~ goals * assists * age * sub_position * current_club_domestic_competition_id - 1, data =stats_delanteros)
+summary(mod11)
+
+# modelo 12
+mod12 <- lm(market_value_in_eur ~ goals * assists * age * sub_position + current_club_domestic_competition_id - 1, data =stats_delanteros)
+summary(mod13)
+
+# modelo 13
+mod13 <- lm(market_value_in_eur ~ goals * assists * age * sub_position * current_club_domestic_competition_id - 1, data =stats_delanteros)
+summary(mod12)
+
+
+anova(mod1, mod13)
+
+# Gráficos de residuos
+
+attackers_stats <- attackers_stats |>
+  add_residuals(mod1) |>
+  add_predictions(mod1)
+
+attackers_stats |>
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point()+
+  geom_hline(yintercept = 0, color="red", size= 1)
+
+attackers_stats |>
+  ggplot(aes(x = goals, y = resid)) +
+  geom_point()+
+  geom_hline(yintercept = 0, color="red", size= 1)
+
+attackers_stats |>
+  ggplot(aes(x = assists, y = resid)) +
+  geom_point()+
+  geom_hline(yintercept = 0, color="red", size= 1)
 
 
 
