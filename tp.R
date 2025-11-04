@@ -17,35 +17,268 @@ appearances <- read_csv("appearances.csv")
 
 # ---- Seleccion de tablas y variables ----
 
-players <- players %>%
-  select(
-    player_id, 
-    name, 
-    last_season, 
-    date_of_birth,
-    position, 
-    sub_position,
-    height_in_cm, 
-    market_value_in_eur
-  )
+delanteros <- players |>
+  filter(position == "Attack" & last_season == 2024) |>
+  mutate(age = floor(interval(date_of_birth, today()) / years(1))) |>
+  filter(!is.na(market_value_in_eur) & !is.na(height_in_cm))
 
-competitions <- competitions %>%
-  select(competition_id, type, sub_type, name)
+delanteros_appearances <- appearances |>
+  semi_join(delanteros, join_by(player_id)) |>
+  filter(date >= "2023-08-01" & minutes_played != 0)
 
-appearances <- appearances %>%
-  select(-player_club_id, -player_current_club_id)
+competitions <- competitions |>
+  filter(type == "domestic_league") |>
+  select(competition_id, name) |>
+  rename(league = name)
+
+glimpse(delanteros)
 
 # ---- End Seleccion de tablas y variables ----
 
-delanteros <- players %>%
-  filter(position == 'Attack' & last_season == '2024')
+# ---- ANALISIS EXPLORATORIO ----
 
-delanteros <- delanteros %>%
-  mutate(age = floor(interval(date_of_birth, today()) / years(1)))
+# Altura vs subspocición
 
-appearances <- appearances %>% semi_join(delanteros, join_by(player_id))
+delanteros |>
+  mutate(
+    sub_position = fct_reorder(sub_position, height_in_cm, .fun = median)
+  ) |>
+  ggplot(aes(x = sub_position, y = height_in_cm, fill = sub_position)) +
+  geom_boxplot(
+    varwidth = TRUE,
+    color = "black",
+    fill = "steelblue",
+    alpha = 0.8,
+    outlier.color = "red",
+    outlier.alpha = 0.6
+  )  +
+  labs(
+    title = "Distribución de altura por subposición de los delanteros",
+    x = "Subposición",
+    y = "Altura (cm)",
+    fill = "Subposición"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(color = "gray30", size = 12),
+    axis.title = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 30, hjust = 1, color = "gray20"),
+    axis.text.y = element_text(color = "gray20"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "none"
+  )
 
-glimpse(delanteros)
+# Goles vs asistencias
+
+delanteros_appearances |>
+  group_by(player_id) |>
+  summarise(
+    goals = sum(goals, na.rm = TRUE),
+    assists = sum(assists, na.rm = TRUE)
+  ) |>
+  ggplot(aes(x = assists, y = goals)) +
+  geom_jitter(
+    alpha = 0.5,
+    size = 2,
+    color = "steelblue"
+  ) +
+  geom_abline(
+    slope = 1,
+    intercept = 0,
+    color = "red",
+    linewidth = 1
+  ) +
+  labs(
+    title = "Relación entre goles y asistencias de delanteros",
+    x = "Asistencias totales",
+    y = "Goles totales"
+  ) +
+  coord_cartesian(xlim = c(0, NA), ylim = c(0, NA)) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
+
+# Distribucion de edades
+
+ggplot(delanteros, aes(x = age)) +
+  geom_histogram(
+    binwidth = 2,
+    fill = "steelblue",
+    color = "black",
+    alpha = 0.8,
+    boundary = 0
+  ) +
+  labs(
+    title = "Distribución de edades de los delanteros",
+    subtitle = "Cada barra representa un intervalo de 2 años",
+    x = "Edad (años)",
+    y = "Cantidad de jugadores"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12, color = "gray30"),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  ) +
+  coord_cartesian(xlim = c(min(delanteros$age, na.rm = TRUE), max(delanteros$age, na.rm = TRUE)))
+
+# Distribución de altura
+
+ggplot(delanteros, aes(x = height_in_cm)) +
+  geom_histogram(
+    binwidth = 2,
+    fill = "steelblue",
+    color = "black",
+    alpha = 0.8,
+    boundary = 0
+  ) +
+  labs(
+    title = "Distribución de alturas de los delanteros",
+    subtitle = "Cada barra representa un intervalo de 2 cm",
+    x = "Altura (cm)",
+    y = "Cantidad de jugadores"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12, color = "gray30"),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  ) +
+  coord_cartesian(
+    xlim = c(min(delanteros$height_in_cm, na.rm = TRUE), max(delanteros$height_in_cm, na.rm = TRUE))
+  )
+
+# Distribucion de goles + asistencias por jugador
+
+delanteros_appearances |>
+  group_by(player_id) |>
+  summarise(total_goals = sum(goals)) |>
+ggplot(aes(x = total_goals)) +
+  geom_histogram(
+    binwidth = 5,
+    fill = "steelblue",
+    color = "black",
+    alpha = 0.8,
+    boundary = 0
+  ) +
+  labs(
+    title = "Distribución de los goles totales de los delanteros",
+    subtitle = "Cada barra representa un intervalo de 5 goles",
+    x = "Goles totales",
+    y = "Cantidad de jugadores"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12, color = "gray30"),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  ) 
+
+delanteros_appearances |>
+  group_by(player_id) |>
+  summarise(total_assists = sum(assists)) |>
+ggplot(aes(x = total_assists)) +
+  geom_histogram(
+    binwidth = 5,
+    fill = "steelblue",
+    color = "black",
+    alpha = 0.8,
+    boundary = 0
+  ) +
+  labs(
+    title = "Distribución de las asistencias totales de los delanteros",
+    subtitle = "Cada barra representa un intervalo de 5 asistencias",
+    x = "Asistencias totales",
+    y = "Cantidad de jugadores"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12, color = "gray30"),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
+
+# Distribución de valor de mercado
+
+ggplot(delanteros, aes(x = market_value_in_eur)) +
+  geom_histogram(
+    binwidth = 1e+7,
+    fill = "steelblue",
+    color = "black",
+    alpha = 0.8,
+    boundary = 0
+  ) +
+  labs(
+    title = "Distribución del valor de mercado de los delanteros",
+    subtitle = "Cada barra representa intervalos de 10 millones de euros",
+    x = "Valor de mercado (€)",
+    y = "Cantidad de jugadores"
+  ) +
+  coord_cartesian(xlim = c(0, 1e8)) +
+  scale_x_continuous(
+    labels = function(x) paste0(x / 1e6, " M€")
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12, color = "gray30"),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
+
+# GA vs liga
+
+# Agrupar por liga y jugador, sumando goles totales
+delanteros_appearances |>
+  inner_join(competitions, join_by(competition_id)) |>
+  group_by(player_id, league) |>
+  summarise(total_goals = sum(goals, na.rm = TRUE), .groups = "drop") |>
+  mutate(league = fct_reorder(league, total_goals, .fun = median)) |>
+  ggplot(aes(y = league, x = total_goals)) +
+  geom_boxplot(
+    varwidth = TRUE,
+    color = "black",
+    fill = "steelblue",
+    alpha = 0.8,
+    outlier.color = "red",
+    outlier.alpha = 0.6
+  ) +
+  labs(
+    title = "Distribución de goles por liga",
+    x = "Goles totales por jugador",
+    y = "Liga"
+  )
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12, color = "gray30"),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20"),
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
 
 # ---- BOX_PLOT: Valuacion de delanteros por subposicion ----
 
